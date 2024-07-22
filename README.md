@@ -1,0 +1,1 @@
+# Confluent-Schema-Registry-Client-TS
