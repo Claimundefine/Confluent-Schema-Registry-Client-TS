@@ -1,5 +1,6 @@
 import { RestService } from './RestService';
 import { AxiosResponse } from 'axios';
+import stringify = require('json-stringify-deterministic');
 import { LRUCache } from 'lru-cache';
 import { Mutex } from 'async-mutex';
 
@@ -80,10 +81,6 @@ class SchemaRegistryClient {
   private schemaToVersionCache: LRUCache<string, number>;
   private versionToSchemaCache: LRUCache<string, SchemaMetadata>;
   private metadataToSchemaCache: LRUCache<string, SchemaMetadata>;
-  private missingSchemaCache: LRUCache<number, boolean>;
-  private missingIdCache: LRUCache<number, boolean>;
-  private missingVersionCache: LRUCache<string, boolean>;
-  private schemaToResponseMutex: Mutex;
   private schemaToIdMutex: Mutex;
   private idToSchemaInfoMutex: Mutex;
   private infoToSchemaMutex: Mutex;
@@ -91,17 +88,13 @@ class SchemaRegistryClient {
   private schemaToVersionMutex: Mutex;
   private versionToSchemaMutex: Mutex;
   private metadataToSchemaMutex: Mutex;
-  private missingSchemaMutex: Mutex;
-  private missingIdMutex: Mutex;
-  private missingVersionMutex: Mutex;
 
   constructor(restService: RestService, cacheSize: number = 512, cacheTTL?: number) {
     const cacheOptions = {
        max: cacheSize,
-       ...(cacheTTL !== undefined && { maxAge: cacheTTL }),
-       ...(cacheTTL !== undefined && { stale: false }),
+       ...(cacheTTL !== undefined && { maxAge: cacheTTL })
     }; 
-    // this.schemaToResponseCache = new LRUCache(cacheOptions);
+
     this.restService = restService;
     this.schemaToIdCache = new LRUCache(cacheOptions);
     this.idToSchemaInfoCache = new LRUCache(cacheOptions);
@@ -110,10 +103,6 @@ class SchemaRegistryClient {
     this.schemaToVersionCache = new LRUCache(cacheOptions);
     this.versionToSchemaCache = new LRUCache(cacheOptions);
     this.metadataToSchemaCache = new LRUCache(cacheOptions);
-    this.missingSchemaCache = new LRUCache(cacheOptions);
-    this.missingIdCache = new LRUCache(cacheOptions);
-    this.missingVersionCache = new LRUCache(cacheOptions);
-    this.schemaToResponseMutex = new Mutex();
     this.schemaToIdMutex = new Mutex();
     this.idToSchemaInfoMutex = new Mutex();
     this.infoToSchemaMutex = new Mutex();
@@ -121,9 +110,6 @@ class SchemaRegistryClient {
     this.schemaToVersionMutex = new Mutex();
     this.versionToSchemaMutex = new Mutex();
     this.metadataToSchemaMutex = new Mutex();
-    this.missingSchemaMutex = new Mutex();
-    this.missingIdMutex = new Mutex();
-    this.missingVersionMutex = new Mutex();
   }
 
   public async register(subject: string, schema: SchemaInfo, normalize: boolean = false): Promise<number> {
@@ -133,12 +119,11 @@ class SchemaRegistryClient {
   }
 
   public async registerFullResponse(subject: string, schema: SchemaInfo, normalize: boolean = false): Promise<SchemaMetadata> {
-    const cacheKey = JSON.stringify({ subject, schema });
+    const cacheKey = stringify({ subject, schema });
 
     return await this.infoToSchemaMutex.runExclusive(async () => {
       const cachedSchemaMetadata: SchemaMetadata | undefined = this.infoToSchemaCache.get(cacheKey);
       if (cachedSchemaMetadata) {
-        console.log("registerFullResponse2: Cache hit");
         return cachedSchemaMetadata;
       }
 
@@ -155,11 +140,10 @@ class SchemaRegistryClient {
   }
 
   public async getBySubjectAndId(subject: string, id: number): Promise<SchemaInfo> {
-    const cacheKey = JSON.stringify({ subject, id });
+    const cacheKey = stringify({ subject, id });
     return await this.idToSchemaInfoMutex.runExclusive(async () => {
       const cachedSchema: SchemaInfo | undefined = this.idToSchemaInfoCache.get(cacheKey);
       if (cachedSchema) {
-        console.log("getBySubjectAndId: Cache hit");
         return cachedSchema;
       }
 
@@ -173,17 +157,13 @@ class SchemaRegistryClient {
   }
 
   public async getId(subject: string, schema: SchemaInfo, normalize: boolean = false): Promise<number> {
-    const cacheKey = JSON.stringify({ subject, schema });
+    const cacheKey = stringify({ subject, schema });
     
-    console.log("in get Id");
     return await this.schemaToIdMutex.runExclusive(async () => {
       const cachedId: number | undefined = this.schemaToIdCache.get(cacheKey);
       if (cachedId) {
-        console.log("getId: Cache hit");
         return cachedId;
       }
-
-      console.log("not returning cache get Id");
       
       const response: AxiosResponse<SchemaMetadata> = await this.restService.sendHttpRequest(
         `/subjects/${subject}?normalize=${normalize}`,
@@ -199,7 +179,6 @@ class SchemaRegistryClient {
     return await this.latestToSchemaMutex.runExclusive(async () => {
       const cachedSchema: SchemaMetadata | undefined = this.latestToSchemaCache.get(subject);
       if (cachedSchema) {
-        console.log("getLatestSchemaMetadata: Cache hit");
         return cachedSchema;
       }
 
@@ -213,12 +192,11 @@ class SchemaRegistryClient {
   }
 
   public async getSchemaMetadata(subject: string, version: number, deleted: boolean = false): Promise<SchemaMetadata> {
-    const cacheKey = JSON.stringify({ subject, version, deleted });
+    const cacheKey = stringify({ subject, version, deleted });
   
     return await this.versionToSchemaMutex.runExclusive(async () => {
-      const cachedSchemaMetadata: SchemaMetadata | undefined = this.versionToSchemaCache.get(JSON.stringify(cacheKey));
+      const cachedSchemaMetadata: SchemaMetadata | undefined = this.versionToSchemaCache.get(cacheKey);
       if (cachedSchemaMetadata) {
-        console.log("getSchemaMetadata: Cache hit");
         return cachedSchemaMetadata;
       }
 
@@ -233,12 +211,11 @@ class SchemaRegistryClient {
 
   //TODO: Get clarification with getLatestWithMetadata
   public async getLatestWithMetadata(subject: string, metadata: Metadata, deleted: boolean = false): Promise<SchemaMetadata> {
-    const cacheKey = JSON.stringify({ subject, metadata, deleted });
+    const cacheKey = stringify({ subject, metadata, deleted });
 
     return await this.metadataToSchemaMutex.runExclusive(async () => {
       const cachedSchemaMetadata: SchemaMetadata | undefined = this.metadataToSchemaCache.get(cacheKey);
       if (cachedSchemaMetadata) {
-        console.log("getLatestWithMetadata: Cache hit");
         return cachedSchemaMetadata;
       }
 
@@ -262,23 +239,21 @@ class SchemaRegistryClient {
 
   public async getVersion(subject: string, schema: SchemaInfo, normalize: boolean = false): Promise<number> {
 
-    const cacheKey = JSON.stringify({ subject, schema });
-    await this.schemaToVersionMutex.runExclusive(async () => {
+    const cacheKey = stringify({ subject, schema });
+    return await this.schemaToVersionMutex.runExclusive(async () => {
       const cachedVersion: number | undefined = this.schemaToVersionCache.get(cacheKey);
       if (cachedVersion) {
-        console.log("getVersion: Cache hit");
         return cachedVersion;
+      
       }
-    });
-
-    return await this.schemaToVersionMutex.runExclusive(async () => {
-      const response: AxiosResponse<number> = await this.restService.sendHttpRequest(
+      const response: AxiosResponse<SchemaMetadata> = await this.restService.sendHttpRequest(
         `/subjects/${subject}?normalize=${normalize}`,
         'POST',
         schema
       );
-      this.schemaToVersionCache.set(cacheKey, response.data);
-      return response.data;
+      this.schemaToVersionCache.set(cacheKey, response.data.version);
+      //Metadata will always have a version
+      return response.data.version??-1;
     });
   }
 
@@ -326,8 +301,6 @@ class SchemaRegistryClient {
         }
       });
     });
-
-    //TODO: latestToSchemaCache, metadataToSchemaCache?
 
     const response: AxiosResponse<number[]> = await this.restService.sendHttpRequest(
       `/subjects/${subject}?permanent=${permanent}`,
@@ -457,4 +430,4 @@ class SchemaRegistryClient {
 
 }
 
-export { SchemaRegistryClient, SchemaInfo };
+export { SchemaRegistryClient, SchemaInfo, Metadata, Compatibility, ServerConfig, RuleSet, Rule, Reference, SchemaMetadata };

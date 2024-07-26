@@ -1,5 +1,14 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
+/*
+ * Confluent-Schema-Registry-TypeScript - Node.js wrapper for Confluent Schema Registry
+ *
+ * Copyright (c) 2024 Confluent, Inc.
+ *
+ * This software may be modified and distributed under the terms
+ * of the MIT license.  See the LICENSE.txt file for details.
+ */
+
 export class RestService {
   private client: AxiosInstance
 
